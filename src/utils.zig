@@ -58,7 +58,7 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                         const lower_name = try std.ascii.allocLowerString(heap, name);
                         errdefer heap.free(lower_name);
 
-                        try map.put(lower_name, full_path);
+                        map.putNoClobber(lower_name, full_path) catch {};
                     }
                 }
             }

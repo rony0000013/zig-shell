@@ -7,12 +7,12 @@ pub fn main() !u8 {
     const stdin = std.io.getStdIn().reader();
     const stderr = std.io.getStdErr().writer();
 
-    var paths = try utils.scanPath();
-    defer utils.freeStringHashMap(&paths);
-    var it = paths.iterator();
-    while (it.next()) |entry| {
-        std.debug.print("- {s}\n", .{entry.key_ptr.*});
-    }
+    // var paths = try utils.scanPath();
+    // defer utils.freeStringHashMap(&paths);
+    // var it = paths.iterator();
+    // while (it.next()) |entry| {
+    //     std.debug.print("- {s}\n", .{entry.key_ptr.*});
+    // }
     while (true) {
         try stdout.print("$ ", .{});
         var buffer: [4096]u8 = undefined;
