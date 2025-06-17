@@ -53,16 +53,8 @@ pub fn runEcho(stdout: anytype, message: []const u8) !void {
 }
 
 pub fn runType(stdout: anytype, cmd: []const u8) !void {
-    const heap = std.heap.page_allocator;
     var paths = try utils.scanPath();
-    defer {
-        var it = paths.iterator();
-        while (it.next()) |entry| {
-            heap.free(entry.key_ptr.*);
-            heap.free(entry.value_ptr.*);
-        }
-        paths.deinit();
-    }
+    defer utils.freeStringHashMap(&paths);
     const valid = std.meta.stringToEnum(CommandType, cmd) != null;
 
     if (valid) {

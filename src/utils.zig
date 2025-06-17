@@ -67,3 +67,12 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
 
     return map;
 }
+
+pub fn freeStringHashMap(map: *std.StringHashMap([]const u8)) void {
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        map.allocator.free(entry.key_ptr.*);
+        map.allocator.free(entry.value_ptr.*);
+    }
+    map.deinit();
+}
