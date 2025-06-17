@@ -56,12 +56,12 @@ pub fn runType(stdout: anytype, cmd: []const u8) !void {
     var paths = try utils.scanPath();
     defer utils.freeStringHashMap(&paths);
 
-    {
-        var it = paths.iterator();
-        while (it.next()) |entry| {
-            std.debug.print("- {s}\n", .{entry.key_ptr.*});
-        }
-    }
+    // {
+    //     var it = paths.iterator();
+    //     while (it.next()) |entry| {
+    //         std.debug.print("- {s}\n", .{entry.key_ptr.*});
+    //     }
+    // }
     const valid = std.meta.stringToEnum(CommandType, cmd) != null;
 
     if (valid) {

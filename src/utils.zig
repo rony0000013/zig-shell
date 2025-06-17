@@ -10,6 +10,8 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     const path_variable = try std.process.getEnvVarOwned(heap, "PATH");
     defer heap.free(path_variable);
 
+    std.debug.print("PATH: {s}\n", .{path_variable});
+
     const is_windows = std.builtin.subsystem == .Windows;
     const separator = if (is_windows) ';' else ':';
     var paths_iter = std.mem.tokenizeScalar(u8, path_variable, separator);
