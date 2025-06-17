@@ -17,10 +17,10 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     var paths_iter = std.mem.tokenizeScalar(u8, path_variable, separator);
 
     while (paths_iter.next()) |path| {
-        std.fs.accessAbsolute(path, .{}) catch |err| {
-            std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
-            continue;
-        };
+        // std.fs.accessAbsolute(path, .{}) catch |err| {
+        //     std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
+        //     continue;
+        // };
 
         var dir = try std.fs.openDirAbsolute(path, .{ .iterate = true });
         defer dir.close();
