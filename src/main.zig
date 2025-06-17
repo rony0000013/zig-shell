@@ -5,9 +5,10 @@ pub fn main() !void {
     try stdout.print("$ ", .{});
 
     const stdin = std.io.getStdIn().reader();
-    var buffer: [1024]u8 = undefined;
+    var buffer: [4096]u8 = undefined;
     const user_input = try stdin.readUntilDelimiter(&buffer, '\n');
 
-    // TODO: Handle user input
-    _ = user_input;
+    const cmd = std.mem.trim(u8, user_input, &std.ascii.whitespace);
+    if (cmd.len == 0) return;
+    try stdout.print("{s}: command not found\n", .{cmd});
 }
