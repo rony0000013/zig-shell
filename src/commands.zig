@@ -1,8 +1,9 @@
 const std = @import("std");
+const utils = @import("utils.zig");
 
 pub const Command = union(enum) {
     type: struct {
-        valid: bool,
+        allocator: std.mem.Allocator,
         cmd: []const u8,
     },
     echo: struct {
@@ -21,11 +22,12 @@ const CommandType = enum {
 };
 
 pub fn parseCommand(input: []const u8) !Command {
+    const heap = std.heap.page_allocator;
     var command = std.mem.splitScalar(u8, input, ' ');
     const first_token_raw = command.next() orelse return Command{ .unknown = {} };
 
-    var lower_buf: [1024]u8 = undefined;
-    const first_token = std.ascii.lowerString(&lower_buf, first_token_raw);
+    const first_token = try std.ascii.allocLowerString(heap, first_token_raw);
+    defer heap.free(first_token);
 
     if (std.meta.stringToEnum(CommandType, first_token)) |cmd_type| {
         return switch (cmd_type) {
@@ -36,11 +38,10 @@ pub fn parseCommand(input: []const u8) !Command {
             .echo => Command{ .echo = .{ .message = command.rest() } },
             .type => {
                 const raw_cmd = command.next() orelse return Command{ .unknown = {} };
-                lower_buf = undefined;
                 const cleaned_cmd = std.mem.trim(u8, raw_cmd, &std.ascii.whitespace);
-                const lower_cmd = std.ascii.lowerString(&lower_buf, cleaned_cmd);
-                const valid = std.meta.stringToEnum(CommandType, lower_cmd) != null;
-                return Command{ .type = .{ .valid = valid, .cmd = lower_cmd } };
+                const lower_cmd = try std.ascii.allocLowerString(heap, cleaned_cmd);
+
+                return Command{ .type = .{ .allocator = heap, .cmd = lower_cmd } };
             },
         };
     }
@@ -51,10 +52,29 @@ pub fn runEcho(stdout: anytype, message: []const u8) !void {
     try stdout.print("{s}\n", .{message});
 }
 
-pub fn runType(stdout: anytype, valid: bool, cmd: []const u8) !void {
+pub fn runType(stdout: anytype, cmd: []const u8) !void {
+    const heap = std.heap.page_allocator;
+    var paths = try utils.scanPath();
+    defer {
+        var it = paths.iterator();
+        while (it.next()) |entry| {
+            heap.free(entry.key_ptr.*);
+            heap.free(entry.value_ptr.*);
+        }
+        paths.deinit();
+    }
+    const valid = std.meta.stringToEnum(CommandType, cmd) != null;
+
     if (valid) {
         try stdout.print("{s} is a shell builtin\n", .{cmd});
     } else {
+        var it = paths.iterator();
+        while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.key_ptr.*, cmd)) {
+                try stdout.print("{s} is {s}\n", .{ cmd, entry.value_ptr.* });
+                return;
+            }
+        }
         try stdout.print("{s}: not found\n", .{cmd});
     }
 }

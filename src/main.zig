@@ -1,5 +1,6 @@
 const std = @import("std");
 const commands = @import("commands.zig");
+const utils = @import("utils.zig");
 
 pub fn main() !u8 {
     const stdout = std.io.getStdOut().writer();
@@ -23,7 +24,10 @@ pub fn main() !u8 {
         };
 
         switch (cmd) {
-            .type => |type_| try commands.runType(stdout, type_.valid, type_.cmd),
+            .type => |type_| {
+                defer type_.allocator.free(type_.cmd);
+                try commands.runType(stdout, type_.cmd);
+            },
             .echo => |echo| try commands.runEcho(stdout, echo.message),
             .exit => |exit| return exit.code,
             .unknown => try stdout.print("{s}: command not found\n", .{raw_cmd}),
