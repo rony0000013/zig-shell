@@ -1,7 +1,7 @@
 const std = @import("std");
 const commands = @import("commands.zig");
 
-pub fn main() !void {
+pub fn main() !u8 {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader();
     const stderr = std.io.getStdErr().writer();
@@ -21,13 +21,12 @@ pub fn main() !void {
             try stdout.print("{s}: command not found\n", .{raw_cmd});
             continue;
         };
+
         switch (cmd) {
-            .exit => {
-                break;
-            },
-            .unknown => {
-                try stdout.print("{s}: command not found\n", .{raw_cmd});
-            },
+            .echo => |echo| try commands.runEcho(stdout, echo.message),
+            .exit => |exit| return exit.code,
+            .unknown => try stdout.print("{s}: command not found\n", .{raw_cmd}),
         }
     }
+    return 0;
 }
