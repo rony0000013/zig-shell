@@ -23,6 +23,7 @@ pub fn main() !u8 {
         };
 
         switch (cmd) {
+            .type => |type_| try commands.runType(stdout, type_.valid, type_.cmd),
             .echo => |echo| try commands.runEcho(stdout, echo.message),
             .exit => |exit| return exit.code,
             .unknown => try stdout.print("{s}: command not found\n", .{raw_cmd}),
