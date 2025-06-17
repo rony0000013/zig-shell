@@ -17,8 +17,8 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     var paths_iter = std.mem.tokenizeScalar(u8, path_variable, separator);
 
     while (paths_iter.next()) |path| {
-        std.fs.accessAbsolute(path, .{}) catch {
-            // std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ p, @errorName(err) });
+        std.fs.accessAbsolute(path, .{}) catch |err| {
+            std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
             continue;
         };
 
@@ -27,8 +27,8 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
 
         var it = dir.iterate();
         while (true) {
-            const entry = it.next() catch {
-                // std.debug.print("Warning: Error reading directory '{s}': {s}\n", .{ p, @errorName(err) });
+            const entry = it.next() catch |err| {
+                std.debug.print("Warning: Error reading directory '{s}': {s}\n", .{ path, @errorName(err) });
                 continue;
             } orelse break;
             if (entry.kind == .file) {
