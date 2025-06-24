@@ -37,9 +37,13 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
             } else if (entry.kind == .sym_link) {
                 std.debug.print("   - {s}", .{entry.name});
 
+                // Construct the full path to the symlink
+                const full_path = try std.fs.path.join(heap, &[_][]const u8{ path, entry.name });
+                defer heap.free(full_path);
+
                 // Use the standard maximum path buffer size
                 var buffer: [std.fs.max_path_bytes]u8 = undefined;
-                const link_path = std.fs.readLinkAbsolute(entry.name, &buffer) catch |err| {
+                const link_path = std.fs.readLinkAbsolute(full_path, &buffer) catch |err| {
                     std.debug.print(" (failed to read symlink: {s})\n", .{@errorName(err)});
                     continue;
                 };
