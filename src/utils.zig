@@ -10,17 +10,17 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     const path_variable = try std.process.getEnvVarOwned(heap, "PATH");
     defer heap.free(path_variable);
 
-    std.debug.print("PATH: {s}\n", .{path_variable});
+    // std.debug.print("PATH: {s}\n", .{path_variable});
 
     const is_windows = std.builtin.subsystem == .Windows;
     const separator = if (is_windows) ';' else ':';
     var paths_iter = std.mem.tokenizeScalar(u8, path_variable, separator);
 
     while (paths_iter.next()) |path| {
-        // std.fs.accessAbsolute(path, .{}) catch |err| {
-        //     std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
-        //     continue;
-        // };
+        std.fs.accessAbsolute(path, .{}) catch |err| {
+            std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
+            continue;
+        };
 
         var dir = try std.fs.openDirAbsolute(path, .{ .iterate = true });
         defer dir.close();
@@ -60,7 +60,18 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                         const lower_name = try std.ascii.allocLowerString(heap, name);
                         errdefer heap.free(lower_name);
 
-                        map.putNoClobber(lower_name, full_path) catch {};
+                        const e = map.getOrPut(lower_name) catch |err| {
+                            std.debug.print("Warning: Failed to add '{s}': {s}\n", .{ lower_name, @errorName(err) });
+                            heap.free(lower_name);
+                            heap.free(full_path);
+                            continue;
+                        };
+                        if (!e.found_existing) {
+                            e.value_ptr.* = full_path;
+                        } else {
+                            heap.free(lower_name);
+                            heap.free(full_path);
+                        }
                     }
                 }
             }
