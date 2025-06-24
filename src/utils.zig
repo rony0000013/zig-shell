@@ -52,7 +52,7 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                         }
                     }
                 }
-            } else if (entry.kind == .sym_link) {
+            } else if (entry.kind == .sym_link and !IS_WINDOWS) {
                 const full_path = try std.fs.path.join(heap, &[_][]const u8{ path, entry.name });
                 defer heap.free(full_path);
 
@@ -121,4 +121,11 @@ pub fn freeStringHashMap(map: *std.StringHashMap([]const u8)) void {
         map.allocator.free(entry.value_ptr.*);
     }
     map.deinit();
+}
+
+pub fn freeArrayList(list: *const std.ArrayList([]const u8)) void {
+    for (list.items) |item| {
+        list.allocator.free(item);
+    }
+    list.deinit();
 }

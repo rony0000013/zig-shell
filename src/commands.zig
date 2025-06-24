@@ -12,7 +12,9 @@ pub const Command = union(enum) {
     exit: struct {
         code: u8,
     },
-    unknown: void,
+    unknown: struct {
+        commands: std.ArrayList([]const u8),
+    },
 };
 
 const CommandType = enum {
@@ -24,7 +26,10 @@ const CommandType = enum {
 pub fn parseCommand(input: []const u8) !Command {
     const heap = std.heap.page_allocator;
     var command = std.mem.splitScalar(u8, input, ' ');
-    const first_token_raw = command.next() orelse return Command{ .unknown = {} };
+    const first_token_raw = command.next() orelse return Command{ .unknown = .{ .commands = std.ArrayList([]const u8).init(heap) } };
+
+    var commands = std.ArrayList([]const u8).init(heap);
+    try commands.append(first_token_raw);
 
     const first_token = try std.ascii.allocLowerString(heap, first_token_raw);
     defer heap.free(first_token);
@@ -37,7 +42,7 @@ pub fn parseCommand(input: []const u8) !Command {
             },
             .echo => Command{ .echo = .{ .message = command.rest() } },
             .type => {
-                const raw_cmd = command.next() orelse return Command{ .unknown = {} };
+                const raw_cmd = command.next() orelse return Command{ .unknown = .{ .commands = commands } };
                 const cleaned_cmd = std.mem.trim(u8, raw_cmd, &std.ascii.whitespace);
                 const lower_cmd = try std.ascii.allocLowerString(heap, cleaned_cmd);
 
@@ -45,17 +50,18 @@ pub fn parseCommand(input: []const u8) !Command {
             },
         };
     }
-    return Command{ .unknown = {} };
+
+    while (command.next()) |token| {
+        try commands.append(token);
+    }
+    return Command{ .unknown = .{ .commands = commands } };
 }
 
 pub fn runEcho(stdout: anytype, message: []const u8) !void {
     try stdout.print("{s}\n", .{message});
 }
 
-pub fn runType(stdout: anytype, cmd: []const u8) !void {
-    var paths = try utils.scanPath();
-    defer utils.freeStringHashMap(&paths);
-
+pub fn runType(stdout: anytype, cmd: []const u8, paths: std.StringHashMap([]const u8)) !void {
     // {
     //     var it = paths.iterator();
     //     while (it.next()) |entry| {
