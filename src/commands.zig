@@ -12,6 +12,7 @@ pub const Command = union(enum) {
     exit: struct {
         code: u8,
     },
+    pwd: void,
     unknown: struct {
         commands: std.ArrayList([]const u8),
     },
@@ -21,6 +22,7 @@ const CommandType = enum {
     exit,
     echo,
     type,
+    pwd,
 };
 
 pub fn parseCommand(input: []const u8) !Command {
@@ -48,6 +50,7 @@ pub fn parseCommand(input: []const u8) !Command {
 
                 return Command{ .type = .{ .allocator = heap, .cmd = lower_cmd } };
             },
+            .pwd => Command{ .pwd = void{} },
         };
     }
 

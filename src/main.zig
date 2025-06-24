@@ -38,6 +38,11 @@ pub fn main() !u8 {
             },
             .echo => |echo| try commands.runEcho(stdout, echo.message),
             .exit => |exit| return exit.code,
+            .pwd => {
+                const cwd = try std.fs.cwd().realpathAlloc(std.heap.page_allocator, ".");
+                defer std.heap.page_allocator.free(cwd);
+                try stdout.print("{s}\n", .{cwd});
+            },
             .unknown => |unknown| {
                 // defer utils.freeArrayList(&unknown.commands);
                 defer unknown.commands.deinit();
