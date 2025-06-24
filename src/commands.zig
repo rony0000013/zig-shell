@@ -125,7 +125,7 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
         if (std.fs.path.isAbsolute(resolved_path)) {
             if (std.fs.openFileAbsolute(resolved_path, .{})) |file| {
                 defer file.close();
-                try stdout.print("{s}: Not a directory\n", .{path});
+                try stdout.print("{s}: Not a directory\n", .{resolved_path});
                 return;
             } else |_| {}
 
@@ -138,7 +138,7 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
 
             if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
                 defer file.close();
-                try stdout.print("{s}: Not a directory\n", .{path});
+                try stdout.print("{s}: Not a directory abs\n", .{abs_path});
                 return;
             } else |_| {}
 
