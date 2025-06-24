@@ -33,8 +33,13 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                 continue;
             } orelse break;
             if (entry.kind == .file) {
-                std.debug.print("   - {s}\n", .{entry.name});
                 try addExecutableToMap(&map, entry.name, path);
+            } else if (entry.kind == .sym_link) {
+                std.debug.print("   - {s}", .{entry.name});
+                var buf: [1024]u8 = undefined;
+                const link_path = try std.fs.readLinkAbsolute(entry.name, &buf);
+                std.debug.print(" -> {s}\n", .{link_path});
+                // try addExecutableToMap(&map, entry.name, link_path);
             }
         }
     }
