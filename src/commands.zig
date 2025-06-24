@@ -42,12 +42,12 @@ pub fn parseCommand(input: []const u8) !Command {
     var commands = std.ArrayList([]const u8).init(heap);
     try commands.append(first_token_raw);
 
-    const rest_size = std.mem.replacementSize(u8, command.rest(), "''", "");
-    const output = try heap.alloc(u8, rest_size);
-    _ = std.mem.replace(u8, command.rest(), "''", "", output);
-    defer heap.free(output);
+    const rest = try std.mem.replaceOwned(u8, heap, command.rest(), "''", "");
+    const rest2 = try std.mem.replaceOwned(u8, heap, rest, "\"\"", "");
+    defer heap.free(rest);
+    defer heap.free(rest2);
 
-    var it = re.iterator(output);
+    var it = re.iterator(rest2);
     while (it.next()) |match| {
         const token = std.mem.trim(u8, match.slice, "'\" ");
         const token_dup = try heap.dupe(u8, token);
