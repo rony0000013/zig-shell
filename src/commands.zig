@@ -117,30 +117,39 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
         try parent_dir.setAsCwd();
     } else {
         const resolved_path = std.fs.path.resolve(allocator, &[1][]const u8{path}) catch {
-            try stdout.print("{s}: No such file or directory\n", .{path});
+            try stdout.print("cd: {s}: No such file or directory\n", .{path});
             return;
         };
         defer allocator.free(resolved_path);
 
         if (std.fs.path.isAbsolute(resolved_path)) {
-            // if (std.fs.openFileAbsolute(resolved_path, .{})) |file| {
-            //     defer file.close();
-            //     try stdout.print("{s}: Not a directory\n", .{resolved_path});
-            //     return;
-            // } else |_| {}
+            if (std.fs.openFileAbsolute(resolved_path, .{})) |file| {
+                defer file.close();
+                const stat = try file.stat();
+                if (stat.kind != .directory) {
+                    try stdout.print("cd: {s}: Not a directory\n", .{resolved_path});
+                    return;
+                }
+            } else |_| {}
 
-            var dir = try std.fs.openDirAbsolute(resolved_path, .{});
+            var dir = std.fs.openDirAbsolute(resolved_path, .{}) catch {
+                try stdout.print("cd: {s}: Error opening directory\n", .{resolved_path});
+                return;
+            };
             defer dir.close();
             try dir.setAsCwd();
         } else {
             const abs_path = try std.fs.cwd().realpathAlloc(allocator, resolved_path);
             defer allocator.free(abs_path);
 
-            // if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
-            //     defer file.close();
-            //     try stdout.print("{s}: Not a directory abs\n", .{abs_path});
-            //     return;
-            // } else |_| {}
+            if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
+                defer file.close();
+                const stat = try file.stat();
+                if (stat.kind != .directory) {
+                    try stdout.print("cd: {s}: Not a directory abs\n", .{abs_path});
+                    return;
+                }
+            } else |_| {}
 
             var dir = try std.fs.openDirAbsolute(abs_path, .{});
             defer dir.close();
