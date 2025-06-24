@@ -17,7 +17,7 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     var paths_iter = std.mem.tokenizeScalar(u8, path_variable, separator);
 
     while (paths_iter.next()) |path| {
-        std.debug.print("Path: {s}\n", .{path});
+        // std.debug.print("Path: {s}\n", .{path});
         std.fs.accessAbsolute(path, .{}) catch |err| {
             std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
             continue;
@@ -42,11 +42,15 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                 defer heap.free(full_path);
 
                 var buffer: [std.fs.max_path_bytes]u8 = undefined;
+                std.debug.print("Symlink: {s}\n", .{full_path});
                 const link_path = std.fs.readLinkAbsolute(full_path, &buffer) catch |err| {
                     std.debug.print(" (failed to read symlink: {s})\n", .{@errorName(err)});
                     continue;
                 };
-                try addExecutableToMap(&map, entry.name, link_path);
+
+                const full_link_path = try std.fs.path.join(heap, &[_][]const u8{ path, link_path });
+                std.debug.print("Link: {s}\n", .{full_link_path});
+                try addExecutableToMap(&map, entry.name, full_link_path);
             }
         }
     }
