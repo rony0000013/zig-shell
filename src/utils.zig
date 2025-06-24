@@ -36,8 +36,13 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                 try addExecutableToMap(&map, entry.name, path);
             } else if (entry.kind == .sym_link) {
                 std.debug.print("   - {s}", .{entry.name});
-                var buf: [1024]u8 = undefined;
-                const link_path = try std.fs.readLinkAbsolute(entry.name, &buf);
+
+                // Use the standard maximum path buffer size
+                var buffer: [std.fs.max_path_bytes]u8 = undefined;
+                const link_path = std.fs.readLinkAbsolute(entry.name, &buffer) catch |err| {
+                    std.debug.print(" (failed to read symlink: {s})\n", .{@errorName(err)});
+                    continue;
+                };
                 std.debug.print(" -> {s}\n", .{link_path});
                 // try addExecutableToMap(&map, entry.name, link_path);
             }
