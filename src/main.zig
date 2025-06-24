@@ -53,8 +53,8 @@ pub fn main() !u8 {
                         .argv = unknown.commands.items,
                         .max_output_bytes = 10 * 1024 * 1024, // 10MB max output
                     });
-                    try stdout.print("{s}\n", .{result.stdout});
-                    try stderr.print("{s}\n", .{result.stderr});
+                    try stdout.print("{s}", .{result.stdout});
+                    try stderr.print("{s}", .{result.stderr});
                 } else {
                     try stdout.print("{s}: command not found\n", .{first_cmd});
                 }
