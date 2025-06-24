@@ -94,14 +94,20 @@ pub fn isExecutable(path: []const u8) bool {
             std.ascii.eqlIgnoreCase(ext, ".cmd") or
             std.ascii.eqlIgnoreCase(ext, ".ps1");
     } else {
-        const file = std.fs.openFileAbsolute(path, .{ .mode = .read_only }) catch |err| {
-            std.debug.print("Warning: Error opening file '{s}': {s}\n", .{ path, @errorName(err) });
+        // Handle both absolute and relative paths
+        const file = if (std.fs.path.isAbsolute(path))
+            std.fs.openFileAbsolute(path, .{ .mode = .read_only })
+        else
+            std.fs.cwd().openFile(path, .{ .mode = .read_only });
+
+        const file_handle = file catch {
+            // std.debug.print("Warning: Error opening file '{s}': {s}\n", .{ path, @errorName(err) });
             return false;
         };
-        defer file.close();
+        defer file_handle.close();
 
-        const stat = file.stat() catch |err| {
-            std.debug.print("Warning: Error getting file stats '{s}': {s}\n", .{ path, @errorName(err) });
+        const stat = file_handle.stat() catch {
+            // std.debug.print("Warning: Error getting file stats '{s}': {s}\n", .{ path, @errorName(err) });
             return false;
         };
         return (stat.mode & 0o111) != 0;
