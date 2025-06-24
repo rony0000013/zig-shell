@@ -1,4 +1,5 @@
 const std = @import("std");
+const mvzr = @import("mvzr");
 const utils = @import("utils.zig");
 
 pub const Command = union(enum) {
@@ -7,7 +8,7 @@ pub const Command = union(enum) {
         cmd: []const u8,
     },
     echo: struct {
-        message: []const u8,
+        messages: std.ArrayList([]const u8),
     },
     exit: struct {
         code: u8,
@@ -32,11 +33,19 @@ const CommandType = enum {
 
 pub fn parseCommand(input: []const u8) !Command {
     const heap = std.heap.page_allocator;
+    const pattern = "\\s*('[^']+'|\"[^\"]+\"|\\w+)\\s*";
+    const re = mvzr.compile(pattern) orelse return error.RegexCompilationFailed;
+
     var command = std.mem.splitScalar(u8, input, ' ');
     const first_token_raw = command.next() orelse return Command{ .unknown = .{ .commands = std.ArrayList([]const u8).init(heap) } };
 
     var commands = std.ArrayList([]const u8).init(heap);
     try commands.append(first_token_raw);
+    var it = re.iterator(command.rest());
+    while (it.next()) |match| {
+        const token = std.mem.trim(u8, match.slice, "'\" ");
+        try commands.append(token);
+    }
 
     const first_token = try std.ascii.allocLowerString(heap, first_token_raw);
     defer heap.free(first_token);
@@ -47,7 +56,7 @@ pub fn parseCommand(input: []const u8) !Command {
                 const code = try std.fmt.parseInt(u8, command.next() orelse "0", 10);
                 return Command{ .exit = .{ .code = code } };
             },
-            .echo => Command{ .echo = .{ .message = command.rest() } },
+            .echo => Command{ .echo = .{ .messages = commands } },
             .type => {
                 const raw_cmd = command.next() orelse return Command{ .unknown = .{ .commands = commands } };
                 const cleaned_cmd = std.mem.trim(u8, raw_cmd, &std.ascii.whitespace);
@@ -65,14 +74,16 @@ pub fn parseCommand(input: []const u8) !Command {
         };
     }
 
-    while (command.next()) |token| {
-        try commands.append(token);
-    }
     return Command{ .unknown = .{ .commands = commands } };
 }
 
-pub fn runEcho(stdout: anytype, message: []const u8) !void {
-    try stdout.print("{s}\n", .{message});
+pub fn runEcho(stdout: anytype, messages: std.ArrayList([]const u8)) !void {
+    defer messages.deinit();
+
+    for (1..messages.items.len) |i| {
+        try stdout.print("{s} ", .{messages.items[i]});
+    }
+    try stdout.print("\n", .{});
 }
 
 pub fn runType(stdout: anytype, cmd: []const u8, paths: std.StringHashMap([]const u8)) !void {
@@ -106,54 +117,45 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
         defer allocator.free(home_dir);
         var dir = try std.fs.openDirAbsolute(home_dir, .{});
         defer dir.close();
-        try dir.setAsCwd();
-        // } else if (std.mem.eql(u8, path, ".")) {
-        //     try std.fs.cwd().setAsCwd();
-        // } else if (std.mem.eql(u8, path, "..")) {
-        //     const parent_cwd = try std.fs.cwd().realpathAlloc(allocator, "..");
-        //     defer allocator.free(parent_cwd);
-        //     var parent_dir = try std.fs.openDirAbsolute(parent_cwd, .{});
-        //     defer parent_dir.close();
-        //     try parent_dir.setAsCwd();
-    } else {
-        if (std.fs.path.isAbsolute(path)) {
-            if (std.fs.openFileAbsolute(path, .{})) |file| {
-                defer file.close();
-                const stat = try file.stat();
-                if (stat.kind != .directory) {
-                    try stdout.print("cd: {s}: Not a directory\n", .{path});
-                    return;
-                }
-            } else |_| {}
-
-            var dir = std.fs.openDirAbsolute(path, .{}) catch {
-                try stdout.print("cd: {s}: No such file or directory\n", .{path});
-                return;
-            };
-            defer dir.close();
-            try dir.setAsCwd();
-        } else {
-            const abs_path = std.fs.cwd().realpathAlloc(allocator, path) catch {
-                try stdout.print("cd: {s}: No such file or directory\n", .{path});
-                return;
-            };
-            defer allocator.free(abs_path);
-
-            if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
-                defer file.close();
-                const stat = try file.stat();
-                if (stat.kind != .directory) {
-                    try stdout.print("cd: {s}: Not a directory\n", .{abs_path});
-                    return;
-                }
-            } else |_| {}
-
-            var dir = std.fs.openDirAbsolute(abs_path, .{}) catch {
-                try stdout.print("cd: {s}: No such file or directory\n", .{abs_path});
-                return;
-            };
-            defer dir.close();
-            try dir.setAsCwd();
-        }
+        return try dir.setAsCwd();
     }
+    if (std.fs.path.isAbsolute(path)) {
+        if (std.fs.openFileAbsolute(path, .{})) |file| {
+            defer file.close();
+            const stat = try file.stat();
+            if (stat.kind != .directory) {
+                try stdout.print("cd: {s}: Not a directory\n", .{path});
+                return;
+            }
+        } else |_| {}
+
+        var dir = std.fs.openDirAbsolute(path, .{}) catch {
+            try stdout.print("cd: {s}: No such file or directory\n", .{path});
+            return;
+        };
+        defer dir.close();
+        return try dir.setAsCwd();
+    }
+
+    const abs_path = std.fs.cwd().realpathAlloc(allocator, path) catch {
+        try stdout.print("cd: {s}: No such file or directory\n", .{path});
+        return;
+    };
+    defer allocator.free(abs_path);
+
+    if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
+        defer file.close();
+        const stat = try file.stat();
+        if (stat.kind != .directory) {
+            try stdout.print("cd: {s}: Not a directory\n", .{abs_path});
+            return;
+        }
+    } else |_| {}
+
+    var dir = std.fs.openDirAbsolute(abs_path, .{}) catch {
+        try stdout.print("cd: {s}: No such file or directory\n", .{abs_path});
+        return;
+    };
+    defer dir.close();
+    return try dir.setAsCwd();
 }

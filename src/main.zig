@@ -36,7 +36,7 @@ pub fn main() !u8 {
                 defer type_.allocator.free(type_.cmd);
                 try commands.runType(stdout, type_.cmd, paths);
             },
-            .echo => |echo| try commands.runEcho(stdout, echo.message),
+            .echo => |echo| try commands.runEcho(stdout, echo.messages),
             .exit => |exit| return exit.code,
             .pwd => {
                 const cwd = try std.fs.cwd().realpathAlloc(std.heap.page_allocator, ".");

@@ -2,12 +2,25 @@ const std = @import("std");
 
 // Learn more about this file here: https://ziglang.org/learn/build-system
 pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
     const exe = b.addExecutable(.{
         .name = "main",
         .root_source_file = b.path("src/main.zig"),
-        .target = b.standardTargetOptions(.{}),
-        .optimize = b.standardOptimizeOption(.{}),
+        .target = target,
+        .optimize = optimize,
     });
+
+    // Add zig-regex module
+    const zig_regex = b.dependency("mvzr", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Add the module to the executable
+    const regex_module = zig_regex.module("mvzr");
+    exe.root_module.addImport("mvzr", regex_module);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
