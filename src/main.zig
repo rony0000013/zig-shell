@@ -43,6 +43,7 @@ pub fn main() !u8 {
                 defer std.heap.page_allocator.free(cwd);
                 try stdout.print("{s}\n", .{cwd});
             },
+            .cd => |cd| try commands.runCd(stdout, cd.allocator, cd.path),
             .unknown => |unknown| {
                 // defer utils.freeArrayList(&unknown.commands);
                 defer unknown.commands.deinit();

@@ -13,6 +13,10 @@ pub const Command = union(enum) {
         code: u8,
     },
     pwd: void,
+    cd: struct {
+        allocator: std.mem.Allocator,
+        path: []const u8,
+    },
     unknown: struct {
         commands: std.ArrayList([]const u8),
     },
@@ -23,6 +27,7 @@ const CommandType = enum {
     echo,
     type,
     pwd,
+    cd,
 };
 
 pub fn parseCommand(input: []const u8) !Command {
@@ -51,6 +56,12 @@ pub fn parseCommand(input: []const u8) !Command {
                 return Command{ .type = .{ .allocator = heap, .cmd = lower_cmd } };
             },
             .pwd => Command{ .pwd = void{} },
+            .cd => {
+                const path = command.next() orelse return Command{ .unknown = .{ .commands = commands } };
+                const cleaned_path = std.mem.trim(u8, path, &std.ascii.whitespace);
+                const lower_path = try std.ascii.allocLowerString(heap, cleaned_path);
+                return Command{ .cd = .{ .allocator = heap, .path = lower_path } };
+            },
         };
     }
 
@@ -84,5 +95,56 @@ pub fn runType(stdout: anytype, cmd: []const u8, paths: std.StringHashMap([]cons
             }
         }
         try stdout.print("{s}: not found\n", .{cmd});
+    }
+}
+
+pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !void {
+    defer allocator.free(path);
+
+    if (std.mem.eql(u8, path, "~")) {
+        const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
+        defer allocator.free(home_dir);
+        var dir = try std.fs.openDirAbsolute(home_dir, .{});
+        defer dir.close();
+        try dir.setAsCwd();
+    } else if (std.mem.eql(u8, path, ".")) {
+        try std.fs.cwd().setAsCwd();
+    } else if (std.mem.eql(u8, path, "..")) {
+        const parent_cwd = try std.fs.cwd().realpathAlloc(allocator, "..");
+        defer allocator.free(parent_cwd);
+        var parent_dir = try std.fs.openDirAbsolute(parent_cwd, .{});
+        defer parent_dir.close();
+        try parent_dir.setAsCwd();
+    } else {
+        const resolved_path = std.fs.path.resolve(allocator, &[1][]const u8{path}) catch {
+            try stdout.print("{s}: No such file or directory\n", .{path});
+            return;
+        };
+        defer allocator.free(resolved_path);
+
+        if (std.fs.path.isAbsolute(resolved_path)) {
+            if (std.fs.openFileAbsolute(resolved_path, .{})) |file| {
+                defer file.close();
+                try stdout.print("{s}: Not a directory\n", .{path});
+                return;
+            } else |_| {}
+
+            var dir = try std.fs.openDirAbsolute(resolved_path, .{});
+            defer dir.close();
+            try dir.setAsCwd();
+        } else {
+            const abs_path = try std.fs.cwd().realpathAlloc(allocator, resolved_path);
+            defer allocator.free(abs_path);
+
+            if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
+                defer file.close();
+                try stdout.print("{s}: Not a directory\n", .{path});
+                return;
+            } else |_| {}
+
+            var dir = try std.fs.openDirAbsolute(abs_path, .{});
+            defer dir.close();
+            try dir.setAsCwd();
+        }
     }
 }
