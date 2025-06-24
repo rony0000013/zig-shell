@@ -1,4 +1,5 @@
 const std = @import("std");
+const IS_WINDOWS = std.builtin.subsystem == .Windows;
 
 /// Scans the system PATH for executable files.
 /// Returns a map where keys are executable names (lowercase) and values are their full paths.
@@ -10,13 +11,13 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     const path_variable = try std.process.getEnvVarOwned(heap, "PATH");
     defer heap.free(path_variable);
 
-    // std.debug.print("PATH: {s}\n", .{path_variable});
+    std.debug.print("PATH: {s}\n", .{path_variable});
 
-    const is_windows = std.builtin.subsystem == .Windows;
-    const separator = if (is_windows) ';' else ':';
+    const separator = if (IS_WINDOWS) ';' else ':';
     var paths_iter = std.mem.tokenizeScalar(u8, path_variable, separator);
 
     while (paths_iter.next()) |path| {
+        std.debug.print("Path: {s}\n", .{path});
         std.fs.accessAbsolute(path, .{}) catch |err| {
             std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
             continue;
@@ -32,53 +33,60 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                 continue;
             } orelse break;
             if (entry.kind == .file) {
-                const is_executable = blk: {
-                    if (is_windows) {
-                        const ext = std.fs.path.extension(entry.name);
-                        break :blk std.ascii.eqlIgnoreCase(ext, ".exe") or
-                            std.ascii.eqlIgnoreCase(ext, ".bat") or
-                            std.ascii.eqlIgnoreCase(ext, ".cmd") or
-                            std.ascii.eqlIgnoreCase(ext, ".ps1");
-                    } else {
-                        const full_path = try std.fs.path.join(heap, &[_][]const u8{ path, entry.name });
-                        defer heap.free(full_path);
-
-                        const file = std.fs.openFileAbsolute(full_path, .{ .mode = .read_only }) catch break :blk false;
-                        defer file.close();
-
-                        const stat = file.stat() catch break :blk false;
-                        break :blk (stat.mode & 0o111) != 0;
-                    }
-                };
-
-                if (is_executable) {
-                    var name_iter = std.mem.tokenizeScalar(u8, entry.name, '.');
-                    if (name_iter.next()) |name| {
-                        const full_path = try std.fs.path.join(heap, &[_][]const u8{ path, entry.name });
-                        errdefer heap.free(full_path);
-
-                        const lower_name = try std.ascii.allocLowerString(heap, name);
-                        errdefer heap.free(lower_name);
-
-                        const e = map.getOrPut(lower_name) catch |err| {
-                            std.debug.print("Warning: Failed to add '{s}': {s}\n", .{ lower_name, @errorName(err) });
-                            heap.free(lower_name);
-                            heap.free(full_path);
-                            continue;
-                        };
-                        if (!e.found_existing) {
-                            e.value_ptr.* = full_path;
-                        } else {
-                            heap.free(lower_name);
-                            heap.free(full_path);
-                        }
-                    }
-                }
+                std.debug.print("   - {s}\n", .{entry.name});
+                try addExecutableToMap(&map, entry.name, path);
             }
         }
     }
 
     return map;
+}
+
+pub fn addExecutableToMap(map: *std.StringHashMap([]const u8), file_name: []const u8, path: []const u8) !void {
+    const is_executable = blk: {
+        if (IS_WINDOWS) {
+            const ext = std.fs.path.extension(file_name);
+            break :blk std.ascii.eqlIgnoreCase(ext, ".exe") or
+                std.ascii.eqlIgnoreCase(ext, ".bat") or
+                std.ascii.eqlIgnoreCase(ext, ".cmd") or
+                std.ascii.eqlIgnoreCase(ext, ".ps1");
+        } else {
+            const full_path = try std.fs.path.join(map.allocator, &[_][]const u8{ path, file_name });
+            defer map.allocator.free(full_path);
+
+            const file = std.fs.openFileAbsolute(full_path, .{ .mode = .read_only }) catch break :blk false;
+            defer file.close();
+
+            const stat = file.stat() catch break :blk false;
+            break :blk (stat.mode & 0o111) != 0;
+        }
+    };
+
+    if (is_executable) {
+        var name_iter = std.mem.tokenizeScalar(u8, file_name, '.');
+        if (name_iter.next()) |name| {
+            const full_path = try std.fs.path.join(map.allocator, &[_][]const u8{ path, name });
+            errdefer map.allocator.free(full_path);
+
+            const lower_name = try std.ascii.allocLowerString(map.allocator, name);
+            errdefer map.allocator.free(lower_name);
+
+            const e = map.getOrPut(lower_name) catch |err| {
+                std.debug.print("Warning: Failed to add '{s}': {s}\n", .{ lower_name, @errorName(err) });
+                map.allocator.free(lower_name);
+                map.allocator.free(full_path);
+                return;
+            };
+            if (!e.found_existing) {
+                e.value_ptr.* = full_path;
+            } else {
+                map.allocator.free(lower_name);
+                map.allocator.free(full_path);
+                return;
+            }
+        }
+    }
+    return;
 }
 
 pub fn freeStringHashMap(map: *std.StringHashMap([]const u8)) void {
