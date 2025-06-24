@@ -123,11 +123,11 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
         defer allocator.free(resolved_path);
 
         if (std.fs.path.isAbsolute(resolved_path)) {
-            if (std.fs.openFileAbsolute(resolved_path, .{})) |file| {
-                defer file.close();
-                try stdout.print("{s}: Not a directory\n", .{resolved_path});
-                return;
-            } else |_| {}
+            // if (std.fs.openFileAbsolute(resolved_path, .{})) |file| {
+            //     defer file.close();
+            //     try stdout.print("{s}: Not a directory\n", .{resolved_path});
+            //     return;
+            // } else |_| {}
 
             var dir = try std.fs.openDirAbsolute(resolved_path, .{});
             defer dir.close();
@@ -136,11 +136,11 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
             const abs_path = try std.fs.cwd().realpathAlloc(allocator, resolved_path);
             defer allocator.free(abs_path);
 
-            if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
-                defer file.close();
-                try stdout.print("{s}: Not a directory abs\n", .{abs_path});
-                return;
-            } else |_| {}
+            // if (std.fs.openFileAbsolute(abs_path, .{})) |file| {
+            //     defer file.close();
+            //     try stdout.print("{s}: Not a directory abs\n", .{abs_path});
+            //     return;
+            // } else |_| {}
 
             var dir = try std.fs.openDirAbsolute(abs_path, .{});
             defer dir.close();
