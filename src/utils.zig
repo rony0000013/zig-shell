@@ -48,9 +48,8 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                     continue;
                 };
 
-                const full_link_path = try std.fs.path.join(heap, &[_][]const u8{ path, link_path });
-                std.debug.print("Link: {s}\n", .{full_link_path});
-                try addExecutableToMap(&map, entry.name, full_link_path);
+                std.debug.print("Link: {s}\n", .{link_path});
+                try addExecutableToMap(&map, entry.name, link_path);
             }
         }
     }
