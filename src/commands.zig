@@ -41,10 +41,17 @@ pub fn parseCommand(input: []const u8) !Command {
 
     var commands = std.ArrayList([]const u8).init(heap);
     try commands.append(first_token_raw);
-    var it = re.iterator(command.rest());
+
+    const rest_size = std.mem.replacementSize(u8, command.rest(), "''", "");
+    const output = try heap.alloc(u8, rest_size);
+    _ = std.mem.replace(u8, command.rest(), "''", "", output);
+    defer heap.free(output);
+
+    var it = re.iterator(output);
     while (it.next()) |match| {
         const token = std.mem.trim(u8, match.slice, "'\" ");
-        try commands.append(token);
+        const token_dup = try heap.dupe(u8, token);
+        try commands.append(token_dup);
     }
 
     const first_token = try std.ascii.allocLowerString(heap, first_token_raw);
