@@ -16,8 +16,8 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     var paths_iter = std.mem.tokenizeScalar(u8, path_variable, separator);
 
     while (paths_iter.next()) |path| {
-        std.fs.accessAbsolute(path, .{}) catch |err| {
-            std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
+        std.fs.accessAbsolute(path, .{}) catch {
+            // std.debug.print("Warning: Directory not accessible: {s}: {s}\n", .{ path, @errorName(err) });
             continue;
         };
 
@@ -35,23 +35,7 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                 const full_path = try std.fs.path.join(heap, &[_][]const u8{ path, entry.name });
                 defer heap.free(full_path);
 
-                const is_executable = blk: {
-                    if (IS_WINDOWS) {
-                        const ext = std.fs.path.extension(entry.name);
-                        break :blk std.ascii.eqlIgnoreCase(ext, ".exe") or
-                            std.ascii.eqlIgnoreCase(ext, ".bat") or
-                            std.ascii.eqlIgnoreCase(ext, ".cmd") or
-                            std.ascii.eqlIgnoreCase(ext, ".ps1");
-                    } else {
-                        const file = std.fs.openFileAbsolute(full_path, .{ .mode = .read_only }) catch break :blk false;
-                        defer file.close();
-
-                        const stat = file.stat() catch break :blk false;
-                        break :blk (stat.mode & 0o111) != 0;
-                    }
-                };
-
-                if (is_executable) {
+                if (isExecutable(full_path)) {
                     var name_iter = std.mem.tokenizeScalar(u8, entry.name, '.');
                     if (name_iter.next()) |name| {
                         const lower_name = try std.ascii.allocLowerString(heap, name);
@@ -72,35 +56,27 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
                 const full_path = try std.fs.path.join(heap, &[_][]const u8{ path, entry.name });
                 defer heap.free(full_path);
 
-                // On Windows, skip non-symlink reparse points
-                if (IS_WINDOWS) {
-                    const wpath = std.unicode.utf8ToUtf16LeAllocZ(heap, full_path) catch continue;
-                    defer heap.free(wpath);
-
-                    const attrs = std.os.windows.kernel32.GetFileAttributesW(wpath.ptr);
-                    if (attrs == std.os.windows.INVALID_FILE_ATTRIBUTES) continue;
-                    if (attrs & std.os.windows.FILE_ATTRIBUTE_REPARSE_POINT == 0) continue;
-                }
-
                 var buffer: [std.fs.max_path_bytes]u8 = undefined;
                 const link_path = std.fs.readLinkAbsolute(full_path, &buffer) catch {
                     // Skip if we can't read the symlink
                     continue;
                 };
 
-                var name_iter = std.mem.tokenizeScalar(u8, entry.name, '.');
-                if (name_iter.next()) |name| {
-                    const lower_name = try std.ascii.allocLowerString(heap, name);
-                    const e = map.getOrPut(lower_name) catch {
-                        heap.free(lower_name);
-                        continue;
-                    };
+                if (isExecutable(link_path)) {
+                    var name_iter = std.mem.tokenizeScalar(u8, entry.name, '.');
+                    if (name_iter.next()) |name| {
+                        const lower_name = try std.ascii.allocLowerString(heap, name);
+                        const e = map.getOrPut(lower_name) catch {
+                            heap.free(lower_name);
+                            continue;
+                        };
 
-                    if (!e.found_existing) {
-                        const link_path_dup = try heap.dupe(u8, link_path);
-                        e.value_ptr.* = link_path_dup;
-                    } else {
-                        heap.free(lower_name);
+                        if (!e.found_existing) {
+                            const full_path_dup = try heap.dupe(u8, full_path);
+                            e.value_ptr.* = full_path_dup;
+                        } else {
+                            heap.free(lower_name);
+                        }
                     }
                 }
             }
@@ -108,6 +84,28 @@ pub fn scanPath() !std.StringHashMap([]const u8) {
     }
 
     return map;
+}
+
+pub fn isExecutable(path: []const u8) bool {
+    if (IS_WINDOWS) {
+        const ext = std.fs.path.extension(path);
+        return std.ascii.eqlIgnoreCase(ext, ".exe") or
+            std.ascii.eqlIgnoreCase(ext, ".bat") or
+            std.ascii.eqlIgnoreCase(ext, ".cmd") or
+            std.ascii.eqlIgnoreCase(ext, ".ps1");
+    } else {
+        const file = std.fs.openFileAbsolute(path, .{ .mode = .read_only }) catch |err| {
+            std.debug.print("Warning: Error opening file '{s}': {s}\n", .{ path, @errorName(err) });
+            return false;
+        };
+        defer file.close();
+
+        const stat = file.stat() catch |err| {
+            std.debug.print("Warning: Error getting file stats '{s}': {s}\n", .{ path, @errorName(err) });
+            return false;
+        };
+        return (stat.mode & 0o111) != 0;
+    }
 }
 
 pub fn freeStringHashMap(map: *std.StringHashMap([]const u8)) void {
