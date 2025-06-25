@@ -63,11 +63,13 @@ pub fn parseCommand(input: []const u8) !Command {
                 }
             },
             '\'' => {
-                if (!in_double_quote) {
-                    in_single_quote = !in_single_quote;
+                if (!in_double_quote and is_escaped) {
+                    _ = arg.pop();
+                    is_escaped = false;
                 } else {
-                    try arg.append(token);
+                    in_single_quote = !in_single_quote;
                 }
+                try arg.append(token);
             },
             '"' => {
                 if (in_single_quote) {
