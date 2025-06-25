@@ -1,5 +1,4 @@
 const std = @import("std");
-const mvzr = @import("mvzr");
 const utils = @import("utils.zig");
 
 pub const Command = union(enum) {
@@ -33,39 +32,119 @@ const CommandType = enum {
 
 pub fn parseCommand(input: []const u8) !Command {
     const heap = std.heap.page_allocator;
-    const pattern = "\\s*('[^']+'|\"[^\"]+\"|\\w+)\\s*";
-    const re = mvzr.compile(pattern) orelse return error.RegexCompilationFailed;
-
-    var command = std.mem.splitScalar(u8, input, ' ');
-    const first_token_raw = command.next() orelse return Command{ .unknown = .{ .commands = std.ArrayList([]const u8).init(heap) } };
+    // const pattern = "\\s*(\'(?:[^\']*)\'|\"(?:[^\"\\]*(?:\\.[^\"\\]*)*)\"|(?:[^ \\t\\n\\r\\]*(?:\\.[^ \\t\\n\\r\\]*)*))\\s*";
 
     var commands = std.ArrayList([]const u8).init(heap);
-    try commands.append(first_token_raw);
+    var arg = std.ArrayList(u8).init(heap);
+    defer arg.deinit();
 
-    const rest = try std.mem.replaceOwned(u8, heap, command.rest(), "''", "");
-    const rest2 = try std.mem.replaceOwned(u8, heap, rest, "\"\"", "");
-    defer heap.free(rest);
-    defer heap.free(rest2);
+    var command_iter = std.mem.splitScalar(u8, input, ' ');
+    const first_token_raw = command_iter.next() orelse return Command{ .unknown = .{ .commands = std.ArrayList([]const u8).init(heap) } };
 
-    var it = re.iterator(rest2);
-    while (it.next()) |match| {
-        const token = std.mem.trim(u8, match.slice, "'\" ");
-        const token_dup = try heap.dupe(u8, token);
-        try commands.append(token_dup);
+    const first_token_dup = try heap.dupe(u8, first_token_raw);
+    try commands.append(first_token_dup);
+
+    var in_single_quote: bool = false;
+    var in_double_quote: bool = false;
+    var is_escaped: bool = false;
+
+    for (command_iter.rest()) |token| {
+        switch (token) {
+            ' ' => {
+                if (in_single_quote or in_double_quote or is_escaped) {
+                    if (!in_double_quote and is_escaped) {
+                        _ = arg.pop();
+                    }
+                    is_escaped = false;
+                    try arg.append(token);
+                } else if (arg.items.len != 0) {
+                    try commands.append(try arg.toOwnedSlice());
+                    arg.clearRetainingCapacity();
+                }
+            },
+            '\'' => {
+                if (!in_double_quote) {
+                    in_single_quote = !in_single_quote;
+                } else {
+                    try arg.append(token);
+                }
+            },
+            '"' => {
+                if (in_single_quote) {
+                    try arg.append(token);
+                } else if (in_double_quote and is_escaped) {
+                    _ = arg.pop();
+                    try arg.append(token);
+                    is_escaped = false;
+                } else if (is_escaped) {
+                    _ = arg.pop();
+                    try arg.append(token);
+                    is_escaped = false;
+                } else {
+                    in_double_quote = !in_double_quote;
+                }
+            },
+            '\\' => {
+                if (in_single_quote) {
+                    try arg.append(token);
+                } else if (in_double_quote and is_escaped) {
+                    is_escaped = false;
+                } else {
+                    try arg.append(token);
+                    is_escaped = true;
+                }
+            },
+            '\n' => {
+                if (in_double_quote and is_escaped) {
+                    _ = arg.pop();
+                    try arg.append('\n');
+                    is_escaped = false;
+                } else {
+                    break;
+                }
+            },
+            '$' => {
+                if (in_double_quote and is_escaped) {
+                    _ = arg.pop();
+                    try arg.append('$');
+                    is_escaped = false;
+                }
+            },
+            '`' => {
+                if (in_double_quote and is_escaped) {
+                    _ = arg.pop();
+                    try arg.append('`');
+                    is_escaped = false;
+                }
+            },
+            else => {
+                if (is_escaped) {
+                    _ = arg.pop();
+                    is_escaped = false;
+                }
+                try arg.append(token);
+            },
+        }
     }
 
-    const first_token = try std.ascii.allocLowerString(heap, first_token_raw);
-    defer heap.free(first_token);
+    if (arg.items.len != 0) {
+        try commands.append(try arg.toOwnedSlice());
+        arg.clearRetainingCapacity();
+    }
 
-    if (std.meta.stringToEnum(CommandType, first_token)) |cmd_type| {
+    const lower_first_token = try std.ascii.allocLowerString(heap, commands.items[0]);
+    defer heap.free(lower_first_token);
+    if (std.meta.stringToEnum(CommandType, lower_first_token)) |cmd_type| {
         return switch (cmd_type) {
             .exit => {
-                const code = try std.fmt.parseInt(u8, command.next() orelse "0", 10);
+                const code = try std.fmt.parseInt(u8, command_iter.next() orelse "0", 10);
                 return Command{ .exit = .{ .code = code } };
             },
-            .echo => Command{ .echo = .{ .messages = commands } },
+            .echo => {
+                return Command{ .echo = .{ .messages = commands } };
+            },
             .type => {
-                const raw_cmd = command.next() orelse return Command{ .unknown = .{ .commands = commands } };
+                const raw_cmd = command_iter.next() orelse return Command{ .unknown = .{ .commands = commands } };
                 const cleaned_cmd = std.mem.trim(u8, raw_cmd, &std.ascii.whitespace);
                 const lower_cmd = try std.ascii.allocLowerString(heap, cleaned_cmd);
 
@@ -73,7 +152,7 @@ pub fn parseCommand(input: []const u8) !Command {
             },
             .pwd => Command{ .pwd = void{} },
             .cd => {
-                const path = command.next() orelse return Command{ .unknown = .{ .commands = commands } };
+                const path = command_iter.next() orelse return Command{ .unknown = .{ .commands = commands } };
                 const cleaned_path = std.mem.trim(u8, path, &std.ascii.whitespace);
                 const lower_path = try std.ascii.allocLowerString(heap, cleaned_path);
                 return Command{ .cd = .{ .allocator = heap, .path = lower_path } };

@@ -27,7 +27,6 @@ pub fn main() !u8 {
 
         const cmd = commands.parseCommand(raw_cmd) catch |err| {
             try stderr.print("Parse error: {s}\n", .{@errorName(err)});
-            try stdout.print("{s}: command not found\n", .{raw_cmd});
             continue;
         };
 

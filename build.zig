@@ -12,16 +12,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Add zig-regex module
-    const zig_regex = b.dependency("mvzr", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // Add the module to the executable
-    const regex_module = zig_regex.module("mvzr");
-    exe.root_module.addImport("mvzr", regex_module);
-
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
