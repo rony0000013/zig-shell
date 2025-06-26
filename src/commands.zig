@@ -127,7 +127,7 @@ pub fn parseCommand(input: []const u8) !Command {
                 is_escaped = false;
             },
             else => {
-                if (is_escaped) {
+                if (is_escaped and !in_double_quote) {
                     _ = arg.pop();
                 }
                 try arg.append(token);
