@@ -223,9 +223,9 @@ pub fn parseOutput(commands: *std.ArrayList([]const u8)) !Output {
                             return err;
                         };
                     } else {
-                        return std.fs.openFileAbsolute(path, .{ .mode = .read_write }) catch |err| {
+                        return std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| {
                             if (err == error.FileNotFound) {
-                                return std.fs.createFileAbsolute(path, .{ .truncate = truncate });
+                                return std.fs.cwd().createFile(path, .{ .truncate = truncate });
                             }
                             return err;
                         };
