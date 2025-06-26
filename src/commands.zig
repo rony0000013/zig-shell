@@ -38,17 +38,11 @@ pub fn parseCommand(input: []const u8) !Command {
     var arg = std.ArrayList(u8).init(heap);
     defer arg.deinit();
 
-    var command_iter = std.mem.splitScalar(u8, input, ' ');
-    const first_token_raw = command_iter.next() orelse return Command{ .unknown = .{ .commands = std.ArrayList([]const u8).init(heap) } };
-
-    const first_token_dup = try heap.dupe(u8, first_token_raw);
-    try commands.append(first_token_dup);
-
     var in_single_quote: bool = false;
     var in_double_quote: bool = false;
     var is_escaped: bool = false;
 
-    for (command_iter.rest()) |token| {
+    for (input) |token| {
         switch (token) {
             ' ' => {
                 if (in_single_quote) {
@@ -143,19 +137,29 @@ pub fn parseCommand(input: []const u8) !Command {
         arg.clearRetainingCapacity();
     }
 
+    if (commands.items.len == 0) {
+        return Command{ .unknown = .{ .commands = commands } };
+    }
+
     const lower_first_token = try std.ascii.allocLowerString(heap, commands.items[0]);
     defer heap.free(lower_first_token);
     if (std.meta.stringToEnum(CommandType, lower_first_token)) |cmd_type| {
         return switch (cmd_type) {
             .exit => {
-                const code = try std.fmt.parseInt(u8, command_iter.next() orelse "0", 10);
+                if (commands.items.len < 2) {
+                    return Command{ .unknown = .{ .commands = commands } };
+                }
+                const code = try std.fmt.parseInt(u8, commands.items[1], 10);
                 return Command{ .exit = .{ .code = code } };
             },
             .echo => {
                 return Command{ .echo = .{ .messages = commands } };
             },
             .type => {
-                const raw_cmd = command_iter.next() orelse return Command{ .unknown = .{ .commands = commands } };
+                if (commands.items.len < 2) {
+                    return Command{ .unknown = .{ .commands = commands } };
+                }
+                const raw_cmd = commands.items[1];
                 const cleaned_cmd = std.mem.trim(u8, raw_cmd, &std.ascii.whitespace);
                 const lower_cmd = try std.ascii.allocLowerString(heap, cleaned_cmd);
 
@@ -163,7 +167,10 @@ pub fn parseCommand(input: []const u8) !Command {
             },
             .pwd => Command{ .pwd = void{} },
             .cd => {
-                const path = command_iter.next() orelse return Command{ .unknown = .{ .commands = commands } };
+                if (commands.items.len < 2) {
+                    return Command{ .unknown = .{ .commands = commands } };
+                }
+                const path = commands.items[1];
                 const cleaned_path = std.mem.trim(u8, path, &std.ascii.whitespace);
                 const lower_path = try std.ascii.allocLowerString(heap, cleaned_path);
                 return Command{ .cd = .{ .allocator = heap, .path = lower_path } };
