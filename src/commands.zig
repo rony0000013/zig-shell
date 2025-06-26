@@ -51,45 +51,52 @@ pub fn parseCommand(input: []const u8) !Command {
     for (command_iter.rest()) |token| {
         switch (token) {
             ' ' => {
-                if (in_single_quote or in_double_quote or is_escaped) {
-                    if (!in_double_quote and is_escaped) {
-                        _ = arg.pop();
-                    }
-                    is_escaped = false;
+                if (in_single_quote) {
+                    try arg.append(token);
+                } else if (in_double_quote and is_escaped) {
+                    _ = arg.pop();
+                    try arg.append(token);
+                } else if (is_escaped) {
+                    _ = arg.pop();
                     try arg.append(token);
                 } else if (arg.items.len != 0) {
                     try commands.append(try arg.toOwnedSlice());
                     arg.clearRetainingCapacity();
                 }
+                is_escaped = false;
             },
             '\'' => {
-                if (!in_double_quote and is_escaped) {
+                if (in_double_quote) {
+                    try arg.append(token);
+                } else if (is_escaped) {
                     _ = arg.pop();
-                    is_escaped = false;
+                    try arg.append(token);
                 } else {
                     in_single_quote = !in_single_quote;
                 }
-                try arg.append(token);
+                is_escaped = false;
             },
             '"' => {
+                // std.debug.print("in_double_quote: {}, is_escaped: {}, in_single_quote: {}\n", .{ in_double_quote, is_escaped, in_single_quote });
                 if (in_single_quote) {
                     try arg.append(token);
                 } else if (in_double_quote and is_escaped) {
                     _ = arg.pop();
                     try arg.append(token);
-                    is_escaped = false;
-                } else if (is_escaped) {
+                } else if (!in_double_quote and is_escaped) {
                     _ = arg.pop();
                     try arg.append(token);
-                    is_escaped = false;
                 } else {
                     in_double_quote = !in_double_quote;
                 }
+                is_escaped = false;
             },
             '\\' => {
                 if (in_single_quote) {
                     try arg.append(token);
                 } else if (in_double_quote and is_escaped) {
+                    _ = arg.pop();
+                    try arg.append(token);
                     is_escaped = false;
                 } else {
                     try arg.append(token);
@@ -108,25 +115,23 @@ pub fn parseCommand(input: []const u8) !Command {
             '$' => {
                 if (in_double_quote and is_escaped) {
                     _ = arg.pop();
-                    try arg.append('$');
-                    is_escaped = false;
                 }
+                try arg.append(token);
+                is_escaped = false;
             },
             '`' => {
                 if (in_double_quote and is_escaped) {
                     _ = arg.pop();
-                    try arg.append('`');
-                    is_escaped = false;
-                }
-            },
-            else => {
-                if (in_double_quote and is_escaped) {
-                    is_escaped = false;
-                } else if (is_escaped) {
-                    _ = arg.pop();
-                    is_escaped = false;
                 }
                 try arg.append(token);
+                is_escaped = false;
+            },
+            else => {
+                if (is_escaped) {
+                    _ = arg.pop();
+                }
+                try arg.append(token);
+                is_escaped = false;
             },
         }
     }
