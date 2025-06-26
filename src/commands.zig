@@ -120,7 +120,9 @@ pub fn parseCommand(input: []const u8) !Command {
                 }
             },
             else => {
-                if (is_escaped) {
+                if (in_double_quote and is_escaped) {
+                    is_escaped = false;
+                } else if (is_escaped) {
                     _ = arg.pop();
                     is_escaped = false;
                 }
