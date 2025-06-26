@@ -30,25 +30,25 @@ pub fn main() !u8 {
             continue;
         };
 
-        switch (cmd) {
+        switch (cmd.Command) {
             .type => |type_| {
                 defer type_.allocator.free(type_.cmd);
-                try commands.runType(stdout, type_.cmd, paths);
+                try commands.runType(cmd.Output, type_.cmd, paths);
             },
-            .echo => |echo| try commands.runEcho(stdout, echo.messages),
+            .echo => |echo| try commands.runEcho(cmd.Output, echo.messages),
             .exit => |exit| return exit.code,
             .pwd => {
                 const cwd = try std.fs.cwd().realpathAlloc(std.heap.page_allocator, ".");
                 defer std.heap.page_allocator.free(cwd);
-                try stdout.print("{s}\n", .{cwd});
+                try cmd.Output.Stdout.writer().print("{s}\n", .{cwd});
             },
-            .cd => |cd| try commands.runCd(stdout, cd.allocator, cd.path),
+            .cd => |cd| try commands.runCd(cmd.Output, cd.allocator, cd.path),
             .unknown => |unknown| {
                 // defer utils.freeArrayList(&unknown.commands);
                 defer unknown.commands.deinit();
 
                 if (unknown.commands.items.len == 0) {
-                    try stdout.print("{s}: command not found\n", .{raw_cmd});
+                    try cmd.Output.Stdout.writer().print("{s}: command not found\n", .{raw_cmd});
                     continue;
                 }
                 const first_cmd = unknown.commands.items[0];
@@ -58,10 +58,10 @@ pub fn main() !u8 {
                         .argv = unknown.commands.items,
                         .max_output_bytes = 10 * 1024 * 1024, // 10MB max output
                     });
-                    try stdout.print("{s}", .{result.stdout});
-                    try stderr.print("{s}", .{result.stderr});
+                    try cmd.Output.Stdout.writer().print("{s}", .{result.stdout});
+                    try cmd.Output.Stderr.writer().print("{s}", .{result.stderr});
                 } else {
-                    try stdout.print("{s}: command not found\n", .{first_cmd});
+                    try cmd.Output.Stdout.writer().print("{s}: command not found\n", .{first_cmd});
                 }
             },
         }

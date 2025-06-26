@@ -1,6 +1,11 @@
 const std = @import("std");
 const utils = @import("utils.zig");
 
+pub const CommandOutput = struct {
+    Command: Command,
+    Output: Output,
+};
+
 pub const Command = union(enum) {
     type: struct {
         allocator: std.mem.Allocator,
@@ -22,6 +27,16 @@ pub const Command = union(enum) {
     },
 };
 
+pub const Output = struct {
+    Stdout: std.fs.File,
+    Stderr: std.fs.File,
+};
+
+// const OutputType = union(enum) {
+//     std = std.io.getStdOut(),
+//     file: std.fs.File,
+// };
+
 const CommandType = enum {
     exit,
     echo,
@@ -30,7 +45,7 @@ const CommandType = enum {
     cd,
 };
 
-pub fn parseCommand(input: []const u8) !Command {
+pub fn parseCommand(input: []const u8) !CommandOutput {
     const heap = std.heap.page_allocator;
     // const pattern = "\\s*(\'(?:[^\']*)\'|\"(?:[^\"\\]*(?:\\.[^\"\\]*)*)\"|(?:[^ \\t\\n\\r\\]*(?:\\.[^ \\t\\n\\r\\]*)*))\\s*";
 
@@ -136,9 +151,10 @@ pub fn parseCommand(input: []const u8) !Command {
         try commands.append(try arg.toOwnedSlice());
         arg.clearRetainingCapacity();
     }
+    const output = try parseOutput(&commands);
 
     if (commands.items.len == 0) {
-        return Command{ .unknown = .{ .commands = commands } };
+        return CommandOutput{ .Command = Command{ .unknown = .{ .commands = commands } }, .Output = output };
     }
 
     const lower_first_token = try std.ascii.allocLowerString(heap, commands.items[0]);
@@ -147,50 +163,129 @@ pub fn parseCommand(input: []const u8) !Command {
         return switch (cmd_type) {
             .exit => {
                 if (commands.items.len < 2) {
-                    return Command{ .unknown = .{ .commands = commands } };
+                    return CommandOutput{ .Command = Command{ .unknown = .{ .commands = commands } }, .Output = output };
                 }
                 const code = try std.fmt.parseInt(u8, commands.items[1], 10);
-                return Command{ .exit = .{ .code = code } };
+                return CommandOutput{ .Command = Command{ .exit = .{ .code = code } }, .Output = output };
             },
             .echo => {
-                return Command{ .echo = .{ .messages = commands } };
+                return CommandOutput{ .Command = Command{ .echo = .{ .messages = commands } }, .Output = output };
             },
             .type => {
                 if (commands.items.len < 2) {
-                    return Command{ .unknown = .{ .commands = commands } };
+                    return CommandOutput{ .Command = Command{ .unknown = .{ .commands = commands } }, .Output = output };
                 }
                 const raw_cmd = commands.items[1];
                 const cleaned_cmd = std.mem.trim(u8, raw_cmd, &std.ascii.whitespace);
                 const lower_cmd = try std.ascii.allocLowerString(heap, cleaned_cmd);
 
-                return Command{ .type = .{ .allocator = heap, .cmd = lower_cmd } };
+                return CommandOutput{ .Command = Command{ .type = .{ .allocator = heap, .cmd = lower_cmd } }, .Output = output };
             },
-            .pwd => Command{ .pwd = void{} },
+            .pwd => CommandOutput{ .Command = Command{ .pwd = void{} }, .Output = output },
             .cd => {
                 if (commands.items.len < 2) {
-                    return Command{ .unknown = .{ .commands = commands } };
+                    return CommandOutput{ .Command = Command{ .unknown = .{ .commands = commands } }, .Output = output };
                 }
                 const path = commands.items[1];
                 const cleaned_path = std.mem.trim(u8, path, &std.ascii.whitespace);
                 const lower_path = try std.ascii.allocLowerString(heap, cleaned_path);
-                return Command{ .cd = .{ .allocator = heap, .path = lower_path } };
+                return CommandOutput{ .Command = Command{ .cd = .{ .allocator = heap, .path = lower_path } }, .Output = output };
             },
         };
     }
 
-    return Command{ .unknown = .{ .commands = commands } };
+    return CommandOutput{ .Command = Command{ .unknown = .{ .commands = commands } }, .Output = output };
 }
 
-pub fn runEcho(stdout: anytype, messages: std.ArrayList([]const u8)) !void {
+pub fn parseOutput(commands: *std.ArrayList([]const u8)) !Output {
+    const allocator = std.heap.page_allocator;
+    var output = Output{
+        .Stdout = std.io.getStdOut(),
+        .Stderr = std.io.getStdErr(),
+    };
+
+    var to_remove = std.ArrayList(usize).init(allocator);
+    defer to_remove.deinit();
+
+    const l = commands.items.len;
+    for (commands.items, 0..) |arg, i| {
+        if (i + 1 >= l) {
+            continue;
+        }
+        const handleFile = struct {
+            fn create(path: []const u8, truncate: bool) !std.fs.File {
+                if (std.fs.path.isAbsolute(path)) {
+                    if (truncate) {
+                        return std.fs.createFileAbsolute(path, .{}) catch |err| {
+                            if (err == error.PathAlreadyExists) {
+                                return std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+                            }
+                            return err;
+                        };
+                    } else {
+                        return std.fs.openFileAbsolute(path, .{ .mode = .read_write }) catch |err| {
+                            if (err == error.FileNotFound) {
+                                return std.fs.createFileAbsolute(path, .{ .truncate = truncate });
+                            }
+                            return err;
+                        };
+                    }
+                } else {
+                    if (truncate) {
+                        return std.fs.cwd().createFile(path, .{}) catch |err| {
+                            if (err == error.PathAlreadyExists) {
+                                return std.fs.cwd().openFile(path, .{ .mode = .read_write });
+                            }
+                            return err;
+                        };
+                    } else {
+                        return std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| {
+                            if (err == error.FileNotFound) {
+                                return std.fs.cwd().createFile(path, .{ .truncate = truncate });
+                            }
+                            return err;
+                        };
+                    }
+                }
+            }
+        };
+
+        if (std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>")) {
+            output.Stdout = try handleFile.create(commands.items[i + 1], true);
+            try to_remove.append(i);
+            try to_remove.append(i + 1);
+        } else if (std.mem.eql(u8, arg, "2>")) {
+            output.Stderr = try handleFile.create(commands.items[i + 1], true);
+            try to_remove.append(i);
+            try to_remove.append(i + 1);
+        } else if (std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "1>>")) {
+            output.Stdout = try handleFile.create(commands.items[i + 1], false);
+            try to_remove.append(i);
+            try to_remove.append(i + 1);
+        } else if (std.mem.eql(u8, arg, "2>>")) {
+            output.Stderr = try handleFile.create(commands.items[i + 1], false);
+            try to_remove.append(i);
+            try to_remove.append(i + 1);
+        }
+    }
+
+    std.sort.block(usize, to_remove.items, {}, comptime std.sort.desc(usize));
+    for (to_remove.items) |i| {
+        _ = commands.orderedRemove(i);
+    }
+    return output;
+}
+
+pub fn runEcho(output: Output, messages: std.ArrayList([]const u8)) !void {
     defer messages.deinit();
 
     for (1..messages.items.len) |i| {
-        try stdout.print("{s} ", .{messages.items[i]});
+        try output.Stdout.writer().print("{s} ", .{messages.items[i]});
     }
-    try stdout.print("\n", .{});
+    try output.Stdout.writer().print("\n", .{});
 }
 
-pub fn runType(stdout: anytype, cmd: []const u8, paths: std.StringHashMap([]const u8)) !void {
+pub fn runType(output: Output, cmd: []const u8, paths: std.StringHashMap([]const u8)) !void {
     // {
     //     var it = paths.iterator();
     //     while (it.next()) |entry| {
@@ -200,20 +295,20 @@ pub fn runType(stdout: anytype, cmd: []const u8, paths: std.StringHashMap([]cons
     const valid = std.meta.stringToEnum(CommandType, cmd) != null;
 
     if (valid) {
-        try stdout.print("{s} is a shell builtin\n", .{cmd});
+        try output.Stdout.writer().print("{s} is a shell builtin\n", .{cmd});
     } else {
         var it = paths.iterator();
         while (it.next()) |entry| {
             if (std.mem.eql(u8, entry.key_ptr.*, cmd)) {
-                try stdout.print("{s} is {s}\n", .{ cmd, entry.value_ptr.* });
+                try output.Stdout.writer().print("{s} is {s}\n", .{ cmd, entry.value_ptr.* });
                 return;
             }
         }
-        try stdout.print("{s}: not found\n", .{cmd});
+        try output.Stdout.writer().print("{s}: not found\n", .{cmd});
     }
 }
 
-pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !void {
+pub fn runCd(output: Output, allocator: std.mem.Allocator, path: []const u8) !void {
     defer allocator.free(path);
 
     if (std.mem.eql(u8, path, "~")) {
@@ -228,13 +323,13 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
             defer file.close();
             const stat = try file.stat();
             if (stat.kind != .directory) {
-                try stdout.print("cd: {s}: Not a directory\n", .{path});
+                try output.Stdout.writer().print("cd: {s}: Not a directory\n", .{path});
                 return;
             }
         } else |_| {}
 
         var dir = std.fs.openDirAbsolute(path, .{}) catch {
-            try stdout.print("cd: {s}: No such file or directory\n", .{path});
+            try output.Stdout.writer().print("cd: {s}: No such file or directory\n", .{path});
             return;
         };
         defer dir.close();
@@ -242,7 +337,7 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
     }
 
     const abs_path = std.fs.cwd().realpathAlloc(allocator, path) catch {
-        try stdout.print("cd: {s}: No such file or directory\n", .{path});
+        try output.Stdout.writer().print("cd: {s}: No such file or directory\n", .{path});
         return;
     };
     defer allocator.free(abs_path);
@@ -251,13 +346,13 @@ pub fn runCd(stdout: anytype, allocator: std.mem.Allocator, path: []const u8) !v
         defer file.close();
         const stat = try file.stat();
         if (stat.kind != .directory) {
-            try stdout.print("cd: {s}: Not a directory\n", .{abs_path});
+            try output.Stdout.writer().print("cd: {s}: Not a directory\n", .{abs_path});
             return;
         }
     } else |_| {}
 
     var dir = std.fs.openDirAbsolute(abs_path, .{}) catch {
-        try stdout.print("cd: {s}: No such file or directory\n", .{abs_path});
+        try output.Stdout.writer().print("cd: {s}: No such file or directory\n", .{abs_path});
         return;
     };
     defer dir.close();
