@@ -225,7 +225,7 @@ pub fn parseOutput(commands: *std.ArrayList([]const u8)) !Output {
                     } else {
                         return std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| {
                             if (err == error.FileNotFound) {
-                                return std.fs.cwd().createFile(path, .{ .truncate = truncate });
+                                return std.fs.cwd().createFile(path, .{ .truncate = false });
                             }
                             return err;
                         };
@@ -241,7 +241,7 @@ pub fn parseOutput(commands: *std.ArrayList([]const u8)) !Output {
                     } else {
                         return std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| {
                             if (err == error.FileNotFound) {
-                                return std.fs.cwd().createFile(path, .{ .truncate = truncate });
+                                return std.fs.cwd().createFile(path, .{ .truncate = false });
                             }
                             return err;
                         };
@@ -259,11 +259,15 @@ pub fn parseOutput(commands: *std.ArrayList([]const u8)) !Output {
             try to_remove.append(i);
             try to_remove.append(i + 1);
         } else if (std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "1>>")) {
-            output.Stdout = try handleFile.create(commands.items[i + 1], false);
+            const file = try handleFile.create(commands.items[i + 1], false);
+            try file.seekTo(try file.getEndPos());
+            output.Stdout = file;
             try to_remove.append(i);
             try to_remove.append(i + 1);
         } else if (std.mem.eql(u8, arg, "2>>")) {
-            output.Stderr = try handleFile.create(commands.items[i + 1], false);
+            const file = try handleFile.create(commands.items[i + 1], false);
+            try file.seekTo(try file.getEndPos());
+            output.Stderr = file;
             try to_remove.append(i);
             try to_remove.append(i + 1);
         }
