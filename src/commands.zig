@@ -56,6 +56,8 @@ pub fn parseCommand(input: []const u8) !Command {
                 } else if (in_double_quote and is_escaped) {
                     _ = arg.pop();
                     try arg.append(token);
+                } else if (in_double_quote) {
+                    try arg.append(token);
                 } else if (is_escaped) {
                     _ = arg.pop();
                     try arg.append(token);
